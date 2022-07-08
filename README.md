@@ -6,7 +6,7 @@ The most prominent part of this dataset is the "Min Grade" category for each spe
 
 In my analysis, I'll look at trends in how these requirements change throughout the years and also look at if COVID affected these requirements in 2020 & 2021. 
 
-In summary this projet consists of 5 parts:
+**In summary this projet consists of 5 parts:**
 
 Part 1 - Packages, data cleanup and aggregating Comp Sci's domestic & international averages as it is the only specialization that splits them up starting in 2018
 
