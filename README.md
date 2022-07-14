@@ -16,4 +16,4 @@ Part 3 & 3b - Making visual plots that directly show requirements with aggregati
 
 Part 4 - Using regression analysis and T-testing to analyze if COVID was a factor in the requirement trends in 2020 & 2021. 
  
-Part 5 & 5b- Analyzing specialization competitiveness through the use of counting majors with requirements above a certain cutoff (this was an alternative to the direct approach to see if I could find a way to do analysis without extrapolation) 
+Part 5 & 5b- Analyzing specialization competitiveness through the use of looking at proportion of majors with requirements above a certain cutoff
