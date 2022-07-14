@@ -8,9 +8,10 @@ output: html_document
 ## Author
 * Calvin Du (calvingdu@gmail.com)
 
-# Part 1: Loading and Cleaning up Data 
+# Introduction
+In this project, I'll be looking at the UBC Science Specializations Spreadsheet as provided by a FOI request to UBC. I'll be exploring the data in various ways in order to determine if COVID was a factor in that in the increasing grade requirements for specializations in 2020 & 2021. 
 
-In this project, I'll be looking at the UBC Science Specializations Spreadsheet as provided by a FOI request to UBC. I'll be exploring the data in various ways, such as how requirements have changed throughoug the years and if COVID was a factor in that. 
+# Part 1: Loading and Cleaning up Data 
 
 To begin, I first load the data and clean it up to allow for consistency and to remove any errors. 
 
@@ -50,6 +51,13 @@ spec_data$Option[((spec_data$Year == 2020) | (spec_data$Year == 2021)) & (spec_d
 # Same with The Options: Combined Majors & Combined Major
 spec_data$Option[(spec_data$Option == 'Combined Majors')] <- 'Combined Major'
 
+# I also add a dummy variable to identify which years had COVID's affect (2020 and 2021)
+spec_data <- spec_data %>%
+  mutate(COVID = case_when(
+    ((Year == 2020 | Year == 2021)) ~ 1,
+     TRUE ~ 0)) %>%
+      as_factor()
+
 print(spec_data)
 ```
 
@@ -69,12 +77,24 @@ CPSC_Min <- CPSC_Data %>%
               min_grade = mean(min_grade),
             ) 
 
+CPSC_Min <- CPSC_Min %>%
+  mutate(COVID = case_when(
+    ((Year == 2020 | Year == 2021)) ~ 1,
+     TRUE ~ 0)) %>%
+      as_factor()
+
 #Use Interpolation to estimate 2018 min grade as there is no data on domestic min grade 
 CPSC_2018_mean <- mean(c((CPSC_Min$min_grade[CPSC_Min$Year == 2017]),(CPSC_Min$min_grade[CPSC_Min$Year == 2019])))
 
 CPSC_Min$min_grade[CPSC_Min$Year == 2018] <- CPSC_2018_mean
+CPSC_Min$Option <- 'Aggregated CPSC'
+CPSC_Min$Spec <- 'Aggregated CPSC'
+
 
 CPSC_Min
+spec_data <- rbind(spec_data, CPSC_Min)
+
+spec_data
 ```
 
 
@@ -128,25 +148,28 @@ I'll first work the data in order to let it work in my visualization
 # CPSC splits into Domestic & International in 2018, so for the sake of consistency I make a new Option that combines them 
 spec_options_data <- spec_data 
 
-spec_options_data <- rbind(spec_options_data, CPSC_Min)
 spec_options_data <- arrange(spec_options_data, Year, Option)
-spec_options_data <- filter(spec_options_data, !(spec_options_data$Option == 'CPSC (International)' | spec_options_data$Option == 'CPSC (Domestic)')) # Remove CPSC 
+spec_options_data <- filter(spec_options_data, !(spec_options_data$Option == 'CPSC (International)' | spec_options_data$Option == 'CPSC (Domestic)' |  spec_options_data$Option == 'CPSC')) # Remove CPSC 
 
 
-# I get rid of certain options that only befit one type of major (except CPSC) to avoid clutter 
-spec_options_data <- filter(spec_options_data, !spec_options_data$Option == 'COGS')
-spec_options_data <- filter(spec_options_data, !spec_options_data$Option == 'STAT')
+# I combine COGS and STATS into it's own option to avoid clutter, also noting that pre-2017, these specializations had their option as 'Major" so I set them appropiately in the data set
+spec_options_data$Option[(spec_options_data$Spec == 'Major Cognitive Systems(1225): Cognition and Brain')] <- 'COGS'
+spec_options_data$Option[(spec_options_data$Spec == 'Major (0562): Statistics (STAT)')] <- 'STAT'
+
+spec_options_data$Option[(spec_options_data$Option == 'COGS')] <- 'COGS/STATS'
+spec_options_data$Option[(spec_options_data$Option == 'STAT')] <- 'COGS/STATS'
 
 ```
 
-Then I make the visualization, noting that CPSC Domestic & International start at 2019 and the CPSC category after 2018 is an average of the two 
+Then I make the visualization, noting that the CPSC category after 2018 is an average of the domestic/international requirements
 
 ```{r Plot of UBC Options Requirements}
 options_data <- spec_options_data %>%
   group_by(Option, Year) %>%
   summarize(
     avg_min = mean(min_grade),
-    avg_max = mean(max_grade))
+    avg_max = mean(max_grade),
+    avg_sd = sd(min_grade))
   
   options_data
   
@@ -162,20 +185,22 @@ options_data <- spec_options_data %>%
   plot <- plot + labs(
   x = "Year",
   y = "Grade Requirement",
-  color = "Degree Category",
-  fill = "Degree Category",
+  color = "Specialization Option",
+  fill = "Specialization Option",
   title = "Grade Requirement over Time"
   )
   
   plot <- plot + scale_color_brewer(palette ="Dark2")
     
-  plot1 <- plot + geom_line()
+  plot1 <- plot + geom_line() + geom_vline(xintercept = 2020, linetype = "dotted") + annotate(geom="label", x=2020, y=50, label="COVID Begins", color="black")
   plot1
 ```
+This plot demonstrates the trend in which many of the Specialization Options have increasing grade requirements as time goes on. It is interesting to note that from 2015 to 2021, the "Combined Major" option has no long term change. As these options have little meaning due to their inconsistencies in what field the specalizations are in (except CPSC & COGS/STATS), the competetiveness of these options are extremely varied because of it. We can see that as we look at the standard deviation for each option, options such as "Major" and "Combined Major" are very volatile and therefore the mean quite unreliable in representation. Because of this, I will opt to make my own categories to categorize specializations. 
 
 # Part 3b: Looking at Grade Requirements for Custom Categories 
 
 In the following plot, instead of using UBC's 'options' to aggregate specializations, I instead use my own categories in which I believe can provide a better representation of the data. The categories I choose are: Life Sciences, Numerical Sciences, Computer Science (it's own specialization), Specializations considered competetive in 2021 (have a requirement of 75+) and an aggregate of all the specializations
+
 
 ```{r Custom Categories & Requirements}
 #This function creates a subset of spec_data based on the list of specializations given 
@@ -200,29 +225,29 @@ categorized_data_lifesciences <- list_spec(lifesciences) %>%
   mutate(Category = 'Life Sciences') %>% 
         as_factor()
 
-categorized_data_numericalsciences <- rbind((list_spec(numericalsciences)),CPSC_Min) %>%
+categorized_data_numericalsciences <- list_spec(numericalsciences) %>%
   mutate(Category = 'Numerical Sciences') %>% 
         as_factor()
 
-categorized_data_compsci <- CPSC_Min %>%
+categorized_data_compsci <- list_spec(c("Aggregated CPSC")) %>%
   mutate(Category = 'Computer Science') %>% 
         as_factor()
 
-#Competetive Specializations does not include Comp Sci --> This a list of specializations that have a requirement >75 in 2021 
-spec_data_comp_2021 <- filter(spec_data, (spec_data$Year == 2021) & (spec_data$min_grade > 75) & !spec_data$Option == 'CPSC (Domestic)' & !spec_data$Option == "CPSC (International)")
+#This a list of specializations that have a requirement >75 in 2021 
+spec_data_comp_2021 <- spec_data %>%
+    filter((Year == 2021) & (min_grade > 75) & !Option == 'CPSC (Domestic)' & !Option == "CPSC (International)")
+
 list_spec_comp <- c(t(spec_data_comp_2021$Spec))
 
-categorized_data_comp <- list_spec(list_spec_comp) %>%
-      mutate(Category = 'Comp Specializations (Not Comp Sci)') %>% 
+categorized_data_competetive<- list_spec(list_spec_comp) %>%
+      mutate(Category = 'Comp Specializations (Including CPSC)') %>% 
       as_factor()
 
 categorized_data_everything <- spec_data %>%
     mutate(Category = 'All Specializations') %>% 
       as_factor()
 
-
-  
-categorized_data <- rbind(categorized_data_lifesciences, categorized_data_numericalsciences, categorized_data_compsci, categorized_data_comp, categorized_data_everything)
+categorized_data <- rbind(categorized_data_lifesciences, categorized_data_numericalsciences, categorized_data_compsci, categorized_data_competetive, categorized_data_everything)
 
 categorized_data
 
@@ -253,28 +278,61 @@ categorized_data_plot <- categorized_data %>%
   title = "Grade Requirement over Time"
   )
   
-  plot <- plot + scale_color_brewer(palette ="Dark2")
-    
-  categorized_plot <- plot + geom_line()
-  categorized_plot
+  plot <- plot + scale_color_brewer(palette ="Dark2")  
+  categorized_plot <- plot + geom_line() + geom_vline(xintercept = 2020, linetype = "dotted") + annotate(geom="label", x=2020, y=62.5, label="COVID Begins", color="black")
+  categorized_plot 
+```
+The plot definetely shows that specializations have requirements rising throughout the years, in particular in 2020 and 2021 which are referred as the COVID years. Something to note though is that scale of the plot is only in 5% intervals in which most of the changes are within. These are not crazy changes and therefore cannot be conclusive on their own. In the following part, I'll use statistics to determine how probable this situation would've been following the trends in 2015-2019. 
 
+In table form, this data looks like this: 
+
+```{r}
+summarized_data_lifesciences <- categorized_data_lifesciences %>%
+  group_by(Year) %>%
+  summarize(
+    life_sciences_min = mean(min_grade))
+
+summarized_data_numericalsciences <- categorized_data_numericalsciences %>%
+  group_by(Year) %>%
+  summarize(
+    numerical_sciences_min = mean(min_grade))
+
+summarized_data_comp <- categorized_data_competetive%>%
+  group_by(Year) %>%
+  summarize(
+    competetive_specializations_min = mean(min_grade))
+
+summarized_data_cpsc <- categorized_data_compsci %>%
+  group_by(Year) %>%
+  summarize(
+    comp_sci_min = mean(min_grade))
+
+summarized_data_allspecializations <- categorized_data_everything %>%
+  group_by(Year) %>%
+  summarize(
+    all_specializations_min = mean(min_grade))
+
+summarized_data <- merge(summarized_data_lifesciences, summarized_data_numericalsciences, by = "Year")
+summarized_data <- merge(summarized_data, summarized_data_comp, by = "Year")
+summarized_data <- merge(summarized_data, summarized_data_cpsc, by = "Year")
+summarized_data <- merge(summarized_data, summarized_data_allspecializations, by = "Year")
+
+summarized_data
 ```
 
-The plot definetely shows that specializations have requirements rising throughout the years, in particular in 2020 and 2021 which are referred as te COVID years. Something to note though is that scale of the plot is only in 5% intervals in which most of the changes are within. These are not crazy changes and therefore cannot be conclusive on their own. In the following part, I'll use statistics to determine how probable this situation would've been following the trends in 2015-2019. 
-
 # Part 4: Actual Statistics to see if COVID affected requirements
-Using the data made in Part 3b (categorized_data) which is the data on requirement averages of the various categories I made, I will go on to use linear regression in order to extrapolate and forecast what 2020 & 2021 would be with the trends present in 2015-2019 and use that to compare with the actual 2020 & 2021 averages that were affected by COVID. 
+Using the data made in Part 3b (categorized_data) which is the data on requirement averages of the various categories I made, I will go on to use linear regression in order to extrapolate and forecast what 2020 & 2021 would be with the trends present in non-covid years and use that to compare with the actual 2020 & 2021 averages that were affected by COVID. Due to the inconsistency in 2015-2016 in relative to the actual mean, I'll be not including these in the regression line. 
 
 ```{r Regression Plots of Categorized Data}
 #This function makes a regression plot of a categorized dataset
 make_regression_plot <- function(categorized_dataset) {
-catagorized_dataset_plot_data <- categorized_dataset %>%
+categorized_dataset_plot_data <- categorized_dataset %>%
   group_by(Category, Year) %>%
   summarize(
     avg_min = mean(min_grade),
     avg_max = mean(max_grade))
 
-plot <- ggplot(data = catagorized_dataset_plot_data,
+plot <- ggplot(data = categorized_dataset_plot_data,
 aes(
   x = Year,
   y = avg_min,
@@ -292,17 +350,20 @@ plot <- plot + labs(
   )
   
 
-reg <- lm(avg_min~Year, filter(catagorized_dataset_plot_data, (!catagorized_dataset_plot_data$Year == 2020 & !catagorized_dataset_plot_data$Year == 2021))) # filtering here makes the regression line not include 2020 & 2021
+filtered_data <- filter(categorized_dataset_plot_data, (!categorized_dataset_plot_data$Year == 2020 & !categorized_dataset_plot_data$Year == 2021 & !categorized_dataset_plot_data$Year == 2015 & !categorized_dataset_plot_data$Year == 2016)) 
+# filtering here makes the regression line not include 2020 & 2021 and 2015 & 2016
+
+reg <- lm(avg_min~Year, filtered_data)
 coeff <- coefficients(reg)
 
 intercept <- coeff[1]
 slope <- coeff[2]
 
-categorized_plot <- plot + geom_point() + geom_abline(slope = slope, intercept = intercept) + ylim(60,85)
+categorized_plot <- plot + geom_point() + geom_abline(slope = slope, intercept = intercept) + geom_vline(xintercept = 2020, linetype = "dotted") + annotate(geom="label", x=2020, y=62.5, label="COVID Begins", color="black") + ylim(60,85)
 return (categorized_plot)
 }
 
-categorized_datasets <- list(categorized_data_lifesciences, categorized_data_numericalsciences, categorized_data_comp, categorized_data_compsci, categorized_data_everything)
+categorized_datasets <- list(categorized_data_lifesciences, categorized_data_numericalsciences, categorized_data_competetive, categorized_data_compsci, categorized_data_everything)
 
 regression_plots <- lapply(categorized_datasets, make_regression_plot)
 regression_plots
@@ -310,22 +371,25 @@ regression_plots
 
 After seeing the regression plots, it can be seen that the 2020 & 2021 requirements do seem to generally fit in with the projected means. I can further dive into this using a t-test involving all the categories except comp sci (because there is not enough observations) by analyzing if the actual mean in 2021 is probable with 95% confidence to the projected 2021 mean that is derived from the regression analysis from the previous part. 
 
+Null hypothesis: The projected requirement mean of 2021 of the regression line equals the actual requirement mean
+Alternative hypothesis: The projected requirement mean of 2021 of the regression line does not equal the actual requirement mean
+
 ```{r T-Tests of Categorized Data}
 
-categorized_datasets <- list(categorized_data_lifesciences, categorized_data_numericalsciences, categorized_data_comp, categorized_data_everything)
+categorized_datasets <- list(categorized_data_lifesciences, categorized_data_numericalsciences, categorized_data_competetive, categorized_data_everything)
 
 #This function takes in a dataset and does a t-test to evaluate the acutal 2021 requirement mean in comparison to the projected mean from the regression line that extrapolates from data in 2015 - 2019
-t_test_function <- function(catagorized_dataset) {
-categorized_dataset <- catagorized_dataset
+t_test_function <- function(categorized_dataset) {
 
-catagorized_dataset_plot_data <- categorized_dataset %>%
+categorized_dataset_plot_data <- categorized_dataset %>%
   group_by(Category, Year) %>%
   summarize(
     avg_min = mean(min_grade),
     sd_min = sd(min_grade),
     avg_max = mean(max_grade))
   
-filtered_data <- filter(catagorized_dataset_plot_data, (!catagorized_dataset_plot_data$Year == 2020 & !catagorized_dataset_plot_data$Year == 2021))
+filtered_data <- filter(categorized_dataset_plot_data, (!categorized_dataset_plot_data$Year == 2020 & !categorized_dataset_plot_data$Year == 2021 & !categorized_dataset_plot_data$Year == 2015 & !categorized_dataset_plot_data$Year == 2016)) 
+# filtering here makes the regression line not include 2020 & 2021 and 2015 & 2016
 
 reg <- lm(avg_min~Year, filtered_data)
 coeff <- coefficients(reg)
@@ -335,10 +399,11 @@ slope <- coeff[2]
 
 projected2021 <- intercept + slope*2021
 
-actual2021 <- catagorized_dataset_plot_data$`avg_min`[catagorized_dataset_plot_data$Year == 2021]
-actualSD2021 <- catagorized_dataset_plot_data$`sd_min`[catagorized_dataset_plot_data$Year == 2021]
-
 # Hypothesis Test done by hand
+
+# actual2021 <- categorized_dataset_plot_data$`avg_min`[categorized_dataset_plot_data$Year == 2021]
+# actualSD2021 <- categorized_dataset_plot_data$`sd_min`[categorized_dataset_plot_data$Year == 2021]
+
 # test <- pnorm(projected2021, actual2021, actualSD2021)
 # test
 
@@ -360,6 +425,7 @@ actualSD2021 <- catagorized_dataset_plot_data$`sd_min`[catagorized_dataset_plot_
 filtered <- filter(categorized_dataset, categorized_dataset$Year == 2021)$min_grade
 filtered
 
+
 t <- t.test(
       filtered,
        alternative = "two.sided",
@@ -371,89 +437,150 @@ return (t)
 
 t_tests <- lapply(categorized_datasets, t_test_function)
 t_tests
+
+#In order the T-tests are: lifesciences, numericalsciences, competetive_specializations, all_specializations
 ```
 
-All of these t-tests demonstrate that with a significance value of 95%, all of actual means are within the confidence interval. We can therefore accept the null hypothesis that the mean is = to the projected mean and therefore conclude that COVID did not impact the specialization requirements in Science for the year 2021.
+The first t-test being life sciences showcases accepting the null hypothesis while the others reject it. This can display an influence of COVID on the specialization requirements, and is something also seen in the regression plots. 
 
-# Part 5: Alternative View: Looking at how "Competetive" UBC Specializations are getting by count 
+# Part 4b: Pair T-Test of Pre-Covid & Post-Covid
+Another signifiance test I can do is to compare the requirement means of pre-covid years and post-covid years. To be representative, I'll look at a symmetric window between non-covid years and covid years (that being 2017 & 2018 vs 2020 & 2021) in order to have a representative comparison of the trend. 
 
-The following plot will demonstrate how many specializations have requirements above a certain cutoff. By viewing how this count changes throughout the years, it can be seen how competeteive specializations are getting.  
+```{r Pair T-Tests of Pre-Post COVID}
+# Do a pair T test of Pre Covid and Post COVID using the COVID dummy variable to compare if the min requirements are equal
 
-```{r Count of Specializations > Cutoff Plot}
+categorized_datasets <- list(categorized_data_lifesciences, categorized_data_numericalsciences, categorized_data_competetive, categorized_data_everything)
+
+#This function takes in a dataset and does a t-test to evaluate the acutal 2021 requirement mean in comparison to the projected mean from the regression line that extrapolates from data in 2015 - 2019
+t_test_function <- function(categorized_dataset) {
+  
+  filtered_data <- filter(categorized_dataset, (!categorized_dataset$Year == 2015 & !categorized_dataset$Year == 2016 & !categorized_dataset$Year == 2019)) 
+  
+  t <- t.test(
+    x = filter(filtered_data, COVID == 0)$min_grade,
+    y = filter(filtered_data, COVID == 1)$min_grade,
+       
+    alternative = "two.sided",
+    mu = 0,
+    conf.level = 0.95)
+
+  return (t)
+}
+
+t_tests <- lapply(categorized_datasets, t_test_function)
+t_tests
+
+#In order the T-tests are: lifesciences, numericalsciences, competetive_specializations, all_specializations
+```
+
+Again what we can see here is life sciences accepting the null hypothesis while the rest reject. This showcases COVID as a factor in the rise of specialization requirements
+
+# Part 5: Alternative View: Looking at how "Competetive" UBC Specializations are getting by Proportion 
+
+The following plot will demonstrate the proportion of specializations that have requirements above a certain cutoff. By viewing how this proportion changes throughout the years, it can be seen how competeteive specializations are getting.  
+
+```{r Proportion of Specializations > Cutoff Plot}
 #This function takes in a cutoff and provides a table of how many specializations per year have a min grade above that cutoff 
-count_spec_with_cutoff <- function(cutoff) {
-  comp_spec_data <- spec_data %>% 
+proportion_spec_with_cutoff <- function(cutoff) {
+comp_spec_data <- spec_data %>% 
     mutate(Competetive = case_when( 
         (min_grade > cutoff) ~ "Competetive",
         TRUE ~ "Uncompetetive")) %>% 
         as_factor()
-  
-    comp_spec_data <- filter(comp_spec_data, comp_spec_data$Competetive == "Competetive")
-    count_table <- comp_spec_data %>%
-    group_by(Year) %>%
+ 
+    competetive_spec_data <- comp_spec_data
+    count_table <- competetive_spec_data %>%
+    group_by(Year, Competetive) %>%
     summarize( 
     'Count' = n(),
     Cutoff = cutoff)
     count_table$Cutoff <- as.character(count_table$Cutoff)
     
-return (count_table)
+    count_table
+    
+    aggregated_count_table <- c()
+    
+# Calculates total amount of specializations per year to have proportion per year instead of proportion of total amount of specializations due to UBC adding/removing specializations
+    for(i in 2015:2021) {
+    count_table_specific_year <- count_table %>%
+      ungroup %>%
+      filter(Year == i)
+    
+    count_table_specific_year <- count_table_specific_year %>% 
+      mutate(total_year_count = sum(count_table_specific_year$Count))
+    
+    aggregated_count_table <- rbind(aggregated_count_table, count_table_specific_year)
+    }
+  
+    competetive_spec_data <- filter(aggregated_count_table, aggregated_count_table$Competetive == "Competetive")
+    proportion_table <- competetive_spec_data %>%
+    group_by(Year) %>%
+    summarize( 
+    'Proportion' = Count / total_year_count,
+    Cutoff = cutoff)
+    proportion_table$Cutoff <- as.character(proportion_table$Cutoff)
+    
+return (proportion_table)
 }
 
-count_data <- rbind(count_spec_with_cutoff(65), count_spec_with_cutoff(70), count_spec_with_cutoff(75), count_spec_with_cutoff(80), count_spec_with_cutoff(85))
-count_data
+proportion_data <- rbind(proportion_spec_with_cutoff(65), proportion_spec_with_cutoff(70), proportion_spec_with_cutoff(75), proportion_spec_with_cutoff(80), proportion_spec_with_cutoff(85))
 
-count_plot <- ggplot(count_data,
+proportion_data
+
+proportion_plot <- ggplot(proportion_data,
                        aes(
                          x = Year,
-                         y = Count,
+                         y = Proportion*100,
                          color = Cutoff,
                          fill = Cutoff
                        ))
 
-count_plot <- count_plot + labs(
+proportion_plot <- proportion_plot + labs(
   x = "Year",
-  y = "Amount of Specializations",
+  y = "% of Specializations",
   color = "Cutoff",
   fill = "Cutoff",
-  title = "Amount of Specializations Over a Cutoff"
+  title = "Proportion of Specializations Over a Cutoff"
   )
     
-  count_plot <- count_plot + geom_col(position = "dodge")
+  proportion_plot <- proportion_plot + geom_col(position = "dodge") 
   
-  count_plot
+  proportion_plot
 ```
 
-While this plot does give data that showcases how specializations are having higher cutoffs over time, it may be more representative to show how much they are changing from their baseline (2015) in order to give a better view on the change in count rather than total count
+In 2020 and 2021, there is an increase in the proportions drastically in the cutoffs of 75 & 80 implying that many specializations that were previously not as competetive became such during COVID. 
 
-```{r Difference in Count from 2015}
+This can be further viasualized by looking at difference in proportion in the years vs 2015 rather than total proportion
+
+```{r Difference in Proportion from 2015}
 #This function takes in a cutoff and provides a table of how many specializations per year have this requirement more there is than in 2015 
-count_diff_with_cutoff <- function(cutoff) {
- count_table <- count_spec_with_cutoff(cutoff)
- diff_table <- count_table %>%
-  mutate(Difference = Count - count_table$Count[Year == 2015]) %>%
-  filter(!count_table$Year == 2015)
+proportion_diff_with_cutoff <- function(cutoff) {
+ proportion_table <- proportion_spec_with_cutoff(cutoff)
+ diff_table <- proportion_table %>%
+  mutate(Difference = Proportion - proportion_table$Proportion[Year == 2015]) %>%
+  filter(!proportion_table$Year == 2015)
   
 return (diff_table)
 }
 
-diff_data <- rbind(count_diff_with_cutoff(65), count_diff_with_cutoff(70), count_diff_with_cutoff(75), count_diff_with_cutoff(80), count_diff_with_cutoff(85))
+diff_data <- rbind(proportion_diff_with_cutoff(65), proportion_diff_with_cutoff(70), proportion_diff_with_cutoff(75), proportion_diff_with_cutoff(80), proportion_diff_with_cutoff(85))
 
 diff_data
 
 diff_plot <- ggplot(diff_data,
                        aes(
                          x = Year,
-                         y = Difference,
+                         y = Difference*100,
                          color = Cutoff,
                          fill = Cutoff
                        ))
 
 diff_plot <- diff_plot + labs(
   x = "Year",
-  y = "Difference in Count from 2015",
+  y = "Difference in Proportion from 2015",
   color = "Cutoff",
   fill = "Cutoff",
-  title = "Difference in Amount of Specializations Over a Cutoff from 2015"
+  title = "Difference in Proportion of Specializations Over a Cutoff from 2015"
   )
     
   diff_plot <- diff_plot + geom_col(position = "dodge")
@@ -461,106 +588,134 @@ diff_plot <- diff_plot + labs(
   diff_plot
 ```
 
-It's found that the amount of specializations that have a requirement of above 75 or 80 is significant especially in 2020 and 2021. This can demonstrate that specializations are getting more competetive with time and may be affected by COVID as 2020 & 2021 where the specializaiton years were affected by COVID.
+The increase in specializations with a requirement > 75 & 80 can be viewed more representatively with this visualization and it's implications of COVID making specializations more competetive. 
 
 # Part 5b - Looking at Competetetive Specializations but with Consistent Specializations
-
-Though the plots in part 5 demonstrate a change in amount, it does not account for the fact that UBC adds/removes majors throughout the years that can affect count. Therefore, in the following analysis, I will only look at specializations that are present throughout 2015 - 2021 consistently in the following plots. Due to CPSC being split in 2018, I'll also be using the average of domestic/international
+Though the plots in part 5 demonstrate a change in proportion, it does not account for the fact that UBC adds/removes majors throughout the years. This could cause issues such as UBC adding more competetive specializations in 2020 & 2021 that can explain the increase in proportion in those years. Therefore, in the following analysis, I will only look at specializations that are present throughout 2015 - 2021 consistently in the following plots. Due to CPSC being split in 2018, I'll also be using the average of domestic/international
 
 ```{r Creating Consistent Data}
 spec_data_cpsc_consistent <- filter(spec_data, (!spec_data$Option == 'CPSC (International)' & !spec_data$Option == 'CPSC (Domestic)' & !spec_data$Option == 'CPSC'))
-spec_data_cpsc_consistent <- rbind(spec_data_cpsc_consistent, CPSC_Min)
+spec_data_cpsc_consistent <- rbind(spec_data_cpsc_consistent)
 spec_data_consistent <- spec_data_cpsc_consistent %>%
   group_by(Spec) %>%
   filter(all(2015:2021 %in% Year))
 
-spec_data_consistent
+  total_num_specializations_consistent <- spec_data_consistent %>%
+    group_by(Spec) %>%
+    summarize() %>%
+    nrow()
 
 #This is a test to verify that the specializations are consistent throughout the years
-count_spec_data <- spec_data_consistent %>%
+proportion_spec_data <- spec_data_consistent %>%
     group_by(Year) %>%
-    summarise(Count = n())
+    summarise(Proportion = n())
     
-count_spec_data
+proportion_spec_data
+
+spec_data_consistent
+
 ```
 
-```{r Specialization Count Above Cutoff (Consistent)}
-count_spec_with_cutoff_consistent <- function(cutoff) {
-  comp_spec_data_consistent <- spec_data_consistent %>% 
+The following code blocks will be repeating the previous visualizations in Part 5 but instead of looking at all the specializations, I'll only be looking at specializations present throughout 2015-2021 consistently. 
+
+```{r Specialization Proportion Above Cutoff (Consistent)}
+proportion_spec_with_cutoff_consistent <- function(cutoff) {
+    comp_spec_data_consistent <- spec_data_consistent %>% 
     mutate(Competetive = case_when( 
         (min_grade > cutoff) ~ "Competetive",
         TRUE ~ "Uncompetetive")) %>% 
         as_factor()
-  
-     comp_spec_data_consistent <- comp_spec_data_consistent %>%
-       ungroup %>%
-       filter(comp_spec_data_consistent$Competetive == "Competetive")
-     
-    count_table_consistent <- comp_spec_data_consistent %>%
-    group_by(Year) %>%
+ 
+    competetive_spec_data_consistent <- comp_spec_data_consistent
+    count_table_consistent <- competetive_spec_data_consistent %>%
+    group_by(Year, Competetive) %>%
     summarize( 
     'Count' = n(),
     Cutoff = cutoff)
     count_table_consistent$Cutoff <- as.character(count_table_consistent$Cutoff)
     
-return (count_table_consistent)
+    count_table_consistent
+    
+    aggregated_count_table_consistent <- c()
+    
+# Calculates total amount of specializations per year to have proportion per year instead of proportion of total amount of specializations due to UBC adding/removing specializations
+    for(i in 2015:2021) {
+    count_table_specific_year_consistent <- count_table_consistent %>%
+      ungroup %>%
+      filter(Year == i)
+    
+    count_table_specific_year_consistent <- count_table_specific_year_consistent %>% 
+      mutate(total_year_count = sum(count_table_specific_year_consistent$Count))
+    
+    aggregated_count_table_consistent <- rbind(aggregated_count_table_consistent, count_table_specific_year_consistent)
+    }
+  
+    competetive_spec_data_consistent <- filter(aggregated_count_table_consistent, aggregated_count_table_consistent$Competetive == "Competetive")
+    proportion_table_consistent <- competetive_spec_data_consistent %>%
+    group_by(Year) %>%
+    summarize( 
+    'Proportion' = Count / total_year_count,
+    Cutoff = cutoff)
+    proportion_table_consistent$Cutoff <- as.character(proportion_table_consistent$Cutoff)
+    
+return (proportion_table_consistent)
 }
 
-count_data_consistent <- rbind(count_spec_with_cutoff_consistent(65), count_spec_with_cutoff_consistent(70), count_spec_with_cutoff_consistent(75), count_spec_with_cutoff_consistent(80), count_spec_with_cutoff_consistent(85))
+proportion_data_consistent <- rbind(proportion_spec_with_cutoff_consistent(65), proportion_spec_with_cutoff_consistent(70), proportion_spec_with_cutoff_consistent(75), proportion_spec_with_cutoff_consistent(80), proportion_spec_with_cutoff_consistent(85))
 # to test if this is actually consistent, put cutoff at 0 and add it onto data
-count_data_consistent
+proportion_data_consistent
 
-count_plot_consistent <- ggplot(count_data_consistent, 
+proportion_plot_consistent <- ggplot(proportion_data_consistent, 
                        aes(
                          x = Year,
-                         y = Count,
+                         y = Proportion*100,
                          color = Cutoff,
                          fill = Cutoff
                        ))
 
-count_plot_consistent <- count_plot_consistent + labs(
+proportion_plot_consistent <- proportion_plot_consistent + labs(
   x = "Year",
-  y = "Amount of Specializations",
+  y = "% of Specializations",
   color = "Cutoff",
   fill = "Cutoff",
-  title = "Amount of Specializations Over a Cutoff (Consistent)"
+  title = "Proportion of Specializations Over a Cutoff (Consistent)"
   )
     
-  count_plot_consistent <- count_plot_consistent + geom_col(position = "dodge")
+  proportion_plot_consistent <- proportion_plot_consistent + geom_col(position = "dodge")
   
-  count_plot_consistent
+  proportion_plot_consistent
 ```
 
-And for difference in count again:
+And for difference in Proportion again:
 
-```{r Specialization Count Difference from 2015 (Consistent)}
-count_diff_with_cutoff_consistent <- function(cutoff) {
- count_table_consistent <- count_spec_with_cutoff_consistent(cutoff)
- diff_table <- count_table_consistent %>%
-  mutate(Difference = Count - count_table_consistent$Count[Year == 2015]) %>%
-  filter(!count_table_consistent$Year == 2015)
+```{r Specialization Proportion Difference from 2015 (Consistent)}
+proportion_diff_with_cutoff_consistent <- function(cutoff) {
+ proportion_table_consistent <- proportion_spec_with_cutoff_consistent(cutoff)
+ diff_table <- proportion_table_consistent %>%
+  mutate(Difference = Proportion - proportion_table_consistent$Proportion[Year == 2015]) %>%
+  filter(!proportion_table_consistent$Year == 2015)
   
 return (diff_table)
 }
 
-diff_data_consistent <- rbind(count_diff_with_cutoff_consistent(65), count_diff_with_cutoff_consistent(70), count_diff_with_cutoff_consistent(75), count_diff_with_cutoff_consistent(80), count_diff_with_cutoff_consistent(85))
+diff_data_consistent <- rbind(proportion_diff_with_cutoff_consistent(65), proportion_diff_with_cutoff_consistent(70), proportion_diff_with_cutoff_consistent(75), proportion_diff_with_cutoff_consistent(80), proportion_diff_with_cutoff_consistent(85))
 
 diff_data_consistent
 
 diff_plot_consistent <- ggplot(diff_data_consistent,
                        aes(
                          x = Year,
-                         y = Difference,
+                         y = Difference*100,
                          color = Cutoff,
                          fill = Cutoff
                        ))
 
 diff_plot_consistent <- diff_plot_consistent + labs(
   x = "Year",
-  y = "Difference in Count from 2015",
+  y = "Difference in Proportion from 2015",
   color = "Cutoff",
   fill = "Cutoff",
-  title = "Difference in Amount of Specializations Over a Cutoff from 2015 (Consistent)"
+  title = "Difference in Proportion of Specializations Over a Cutoff from 2015 (Consistent)"
   )
     
   diff_plot_consistent <- diff_plot_consistent + geom_col(position = "dodge")
@@ -571,13 +726,13 @@ diff_plot_consistent <- diff_plot_consistent + labs(
 I can see the difference this makes by comparing the plots side by side
 
 ```{r Graphs side by side}
-count_plot + ylim(0,40)
-count_plot_consistent + ylim(0,40)
-diff_plot + ylim(-5,25)
-diff_plot_consistent + ylim(-5,25)
+proportion_plot + ylim(0,100)
+proportion_plot_consistent + ylim(0,100)
+diff_plot + ylim(-50,50)
+diff_plot_consistent + ylim(-50,50)
 ```
 
-We can see that throughout the years, there are not dramatic spikes in the change with the biggest being in 2019 and 2020 that occur in the cutoff of 75. The following code block allows us to find which specializations it is that had this requirement change that goes beyond the cutoff. For example, if I were to put 2018 as a lower year and 2019 as an upper year with the cutoff at 75, I could see which specializations had a requirement cutoff below 75 in 2018 and above 75 in 2019. 
+It can be seen that the difference between these two plots highlight that the proportion of specializations with a requirement > 75 is much less volatile until 2019 in the consistent plot which is interesting as 2019 had no COVID affect. We can also see that the cutoff above 85 has drastically less change in the consistent plot. In order to understand more on these changes in cutoffs in this year, the following code blocks provide a function that allows us to see which specific specializations crossed this cutoff from a lower year to an upper year. 
 
 ```{r Making Function to Find Specializations with Dramatic Change} 
 #This function takes in 2 years and returns a table of specializations that in the lower year, had a requirement lower than the cutoff but in the upperyear had a requirement above the cutoff 
@@ -616,7 +771,7 @@ return (empty_list_spec)
 }
 ```
 
-In particular, a relatively spike can be found between 2018 and 2019 in that there is a large count difference for majors with a requriement > 75. By using this tool I can isolate 5 majors that showcase this change and using the tool in the reverse order, can find 2 specializations that show the reverse
+In particular, a relatively spike can be found between 2018 and 2019 in that there is a large Proportion difference for majors with a requriement > 75. By using this tool I can isolate 5 majors that showcase this change and using the tool in the reverse order, can find 2 specializations that show the reverse
 
 ```{r}
 #Needs year 2015 - 2021 
@@ -630,9 +785,8 @@ While this does not implicate any correlation towards COVID, it is interesting t
 This function takes in 2 years and returns a table of specializations that in the first year, had a requirement lower than the cutoff but in the second year had a requirement above the cutoff 
 
 ```{r}
-specialization_requirement_change(2017, 2020, 83)
+specialization_requirement_change(2019, 2021, 75)
 ```
-
 
 
 
