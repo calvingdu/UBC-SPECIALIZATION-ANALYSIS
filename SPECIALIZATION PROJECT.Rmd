@@ -618,6 +618,8 @@ spec_data_consistent
 
 The following code blocks will be repeating the previous visualizations in Part 5 but instead of looking at all the specializations, I'll only be looking at specializations present throughout 2015-2021 consistently. 
 
+!! Something to note is that this gets rid of many specializations and may not be representative of the data as a whole because of that. By deleting the data in a systemic way this can cause improper representation of how the trends actually are. !!
+
 ```{r Specialization Proportion Above Cutoff (Consistent)}
 proportion_spec_with_cutoff_consistent <- function(cutoff) {
     comp_spec_data_consistent <- spec_data_consistent %>% 
